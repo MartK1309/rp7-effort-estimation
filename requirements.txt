@@ -4,3 +4,4 @@ umap-learn
 pandas
 numpy
 matplotlib
+nltk

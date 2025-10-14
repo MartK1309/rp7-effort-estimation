@@ -19,13 +19,13 @@ def createCollection(client: WeaviateClient):
                 ),
             ),
             # Uncomment for LLM vectorization
-            Configure.Vectors.text2vec_openai(
-                name="openai_vector",
-                model="text-embedding-3-small",
-                vector_index_config=Configure.VectorIndex.hnsw(
-                    distance_metric=VectorDistances.COSINE
-                ),
-            ),
+            # Configure.Vectors.text2vec_openai(
+            #     name="openai_vector",
+            #     model="text-embedding-3-small",
+            #     vector_index_config=Configure.VectorIndex.hnsw(
+            #         distance_metric=VectorDistances.COSINE
+            #     ),
+            # ),
         ],
         multi_tenancy_config=Configure.multi_tenancy(
             enabled=True, auto_tenant_creation=True
