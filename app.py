@@ -1,8 +1,8 @@
 import weaviate
 from helpers.weaviate import createCollection, upsertProject, estimateStorypoint
-from helpers.evaluation import evaluate_project, visualize_vectors
+from helpers.evaluation import evaluate_project, evaluate_vectors, generate_overview_table, create_comparison_table
 from weaviate.classes.init import AdditionalConfig, Timeout
-
+import matplotlib.pyplot as plt
 client = weaviate.connect_to_local(
     additional_config=AdditionalConfig(
         timeout=Timeout(
@@ -10,7 +10,8 @@ client = weaviate.connect_to_local(
         ) 
     )
 )
-project_key = "EVG"
+project_keys = ["DM"]
+
 project_list = [
     "ALOY",
     "APSTUD",
@@ -35,56 +36,45 @@ project_list = [
     "TISTUD",
     "XD"    
 ]
-
+project_keys = project_list
 # Data
 try:
-    client.collections.delete("UserStoryCollection")
+    # client.collections.delete("UserStoryCollection")
     if client.collections.exists("UserStoryCollection"):
         collection = client.collections.use("UserStoryCollection")
     else:
         collection = createCollection(client)
-    # TODO: Make sure to only return collection if already present
+    # show_project_metrics(project_list)
+    # raise Exception("Stop execution after showing project metrics")
     # Only run once when upserting:
     # collection = upsertProject(collection, project_key)
 
-    # items = client.collections.use("UserStoryCollection").query.fetch_objects(limit=10)
-    # item = collection.query.near_text("Custom framework and widget", limit=5)
-    results_data = []
-    for project_key in project_list[:5]:
+    for project_key in project_keys:
         collection = upsertProject(collection, project_key)
-    for project_key in project_list[:5]:
-        MAEpi, MdAE, SA = evaluate_project(project_key, collection)
+    results_data = []
+    vector_variances = {}
+    for project_key in project_keys:
+        MAEpi, MdAE, SA, coverage = evaluate_project(project_key, collection, certainty=0.7)
         # Append the results for the current project to the list
-        results_data.append([project_key, MAEpi, MdAE, SA])
-        visualize_vectors(collection, project_key)
+        results_data.append([project_key, MAEpi, MdAE, SA, coverage])
+        vector_variances[project_key], train_coverage = evaluate_vectors(collection, project_key)
 
-    latex_table = """
-    \\begin{table}[h!]
-    \\centering
-    \\begin{tabular}{|l|c|c|c|}
-    \\hline
-    \\textbf{Project Key} & \\textbf{MAE} & \\textbf{MdAE} & \\textbf{SA} \\\\
-    \\hline
-    """
+    plt.figure(figsize=(10, 6))
+    projects = list(vector_variances.keys())
+    values = list(vector_variances.values())
 
-    # Add a row for each project in your results
-    for row in results_data:
-        # We use an f-string to format the numbers to 3 decimal places
-        # The .replace('_', '\\_') is important to escape underscores for LaTeX
-        project_key_escaped = str(row[0]).replace('_', '\\_')
-        latex_table += f"{project_key_escaped} & {row[1]:.3f} & {row[2]:.3f} & {row[3]:.3f} \\\\\n"
+    generate_overview_table(results_data)
+    create_comparison_table(results_data, "SBERT-SB-SE")
 
-    # Add the closing lines for the table
-    latex_table += """\\hline
-    \\end{tabular}
-    \\caption{Evaluation metrics for each project.}
-    \\label{tab:project_metrics}
-    \\end{table}
-    """
-
-    # Print the final LaTeX code
-    print(latex_table)
-    with open(f"./output/all_projects_results.tex", "w") as f:
-        f.write(latex_table.strip())
+    plt.bar(projects, values, color='cornflowerblue')
+    # plt.axhline(2.0, color='red', linestyle='--', label='High Variance Threshold (2.0)')
+    plt.ylabel("Average Local Story Point Std. Dev.")
+    plt.xlabel("Project")
+    plt.title("Average Local Story Point Variance per Project")
+    plt.xticks(rotation=45, ha='right')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(f"./output/vector_variance_per_project.png")
 finally:
     client.close()

@@ -19,13 +19,13 @@ def createCollection(client: WeaviateClient):
                 ),
             ),
             # Uncomment for LLM vectorization
-            # Configure.Vectors.text2vec_openai(
-            #     name="openai_vector",
-            #     model="text-embedding-3-small",
-            #     vector_index_config=Configure.VectorIndex.hnsw(
-            #         distance_metric=VectorDistances.COSINE
-            #     ),
-            # ),
+            Configure.Vectors.text2vec_openai(
+                name="openai_vector",
+                model="text-embedding-3-small",
+                vector_index_config=Configure.VectorIndex.hnsw(
+                    distance_metric=VectorDistances.COSINE
+                ),
+            ),
         ],
         multi_tenancy_config=Configure.multi_tenancy(
             enabled=True, auto_tenant_creation=True
@@ -47,6 +47,11 @@ def createCollection(client: WeaviateClient):
                 description="The type of the user story",
             ),
             Property(
+                name="components",
+                data_type=DataType.TEXT,
+                description="The components associated with the user story",
+            ),
+            Property(
                 name="storypoint",
                 data_type=DataType.INT,
                 description="The story points assigned to the user story",
@@ -62,7 +67,7 @@ def upsertProject(collection: Collection, projectName: str):
     collection = collection.with_tenant(projectName)
     try:
         df = pd.read_csv(f"./data/TAWOS/{projectName}-train.csv")
-        with collection.batch.fixed_size(batch_size=30) as batch:
+        with collection.batch.fixed_size(batch_size=20) as batch:
             for _, row in df.iterrows():
                 # Preprocess title and description according to the same steps as in LHC-SE
                 preprocessed_title = preprocess(row["title"])
@@ -72,6 +77,7 @@ def upsertProject(collection: Collection, projectName: str):
                     "description": preprocessed_description,
                     "storypoint": int(row["storypoint"]),
                     "type": row["type"],
+                    "components": row["components"],
                 }
                 batch.add_object(uuid=generate_uuid5(row["issuekey"]), properties=obj)
             if batch.number_errors > 10:
@@ -96,10 +102,12 @@ def estimateStorypoint(
     collection: Collection,
     title: str,
     description: str,
+    components: str,
     projectName: str,
     type: str,
     certainty=0.8,
     vectorizer="miniLM_vector",
+    k=5,
 ):
     collection = collection.with_tenant(projectName)
     # For single property search
@@ -110,10 +118,10 @@ def estimateStorypoint(
     #     query=description + " " + title + " " + type, target_vector="miniLM_vector", certainty=certainty, limit=10,return_metadata=["certainty"]
     # )
     result = collection.query.near_text(
-        query=description + " " + title + " " + type,
+        query=description + " " + title + " " + type + " " + components,
         target_vector=vectorizer,
         certainty=certainty,
-        limit=10,
+        limit=k,
         return_metadata=["certainty"],
     )
     print(f"found {len(result.objects)} similar stories with confidence > {certainty}")

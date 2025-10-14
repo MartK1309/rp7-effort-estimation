@@ -21,14 +21,29 @@ services:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
       ENABLE_API_BASED_MODULES: "true"
       ENABLE_MODULES: "text2vec-transformers,text2vec-openai"
-      # OPENAI_APIKEY:  ${OPENAI_APIKEY}
+      OPENAI_APIKEY:  ${OPENAI_APIKEY}
       CLUSTER_HOSTNAME: "node1"
       TRANSFORMERS_INFERENCE_API: http://text2vec-transformers:8080
   text2vec-transformers:
+    # environment:
+      # ENABLE_CUDA: '1'
+      # NVIDIA_VISIBLE_DEVICES: all
+    deploy:
+      resources:
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: all
+        #       capabilities: [gpu]
+        limits:
+          memory: 8g
+
     container_name: text2vec-transformers
-    # image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
-    image: semitechnologies/transformers-inference:qwen-qwen3-embedding-0.6b
+    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
+    # image: semitechnologies/transformers-inference:qwen-qwen3-embedding-0.6b
     # environment:
       # ENABLE_CUDA: 0
+  
 volumes:
   weaviate_data:
+  
