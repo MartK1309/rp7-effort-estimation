@@ -67,7 +67,7 @@ def upsertProject(collection: Collection, projectName: str):
     collection = collection.with_tenant(projectName)
     try:
         df = pd.read_csv(f"./data/TAWOS/{projectName}-train.csv")
-        with collection.batch.fixed_size(batch_size=20) as batch:
+        with collection.batch.fixed_size(batch_size=10) as batch:
             for _, row in df.iterrows():
                 # Preprocess title and description according to the same steps as in LHC-SE
                 preprocessed_title = preprocess(row["title"])
@@ -124,7 +124,6 @@ def estimateStorypoint(
         limit=k,
         return_metadata=["certainty"],
     )
-    print(f"found {len(result.objects)} similar stories with confidence > {certainty}")
     weights = []
 
     if result.objects:
@@ -166,5 +165,4 @@ def estimateStorypoint(
         else:
             print("No valid story points found in similar stories, returning None")
             return None
-    print("No similar stories found, returning None")
     return None

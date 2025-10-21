@@ -8,6 +8,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from scipy.stats import pearsonr
 import random
 from helpers.weaviate import estimateStorypoint
+from typing import Literal
 from sklearn.neighbors import NearestNeighbors
 from data.comparison.comparison_data import data as existing_method_results
 import os
@@ -78,7 +79,12 @@ def generate_overview_table(results_data):
         f.write(latex_table.strip())
 
 
-def evaluate_project(project_key: str, collection: Collection, certainty=0.7):
+def evaluate_project(
+    project_key: str,
+    collection: Collection,
+    certainty=0.8,
+    vectorizer: Literal["openai_vector", "miniLM_vector"] = "miniLM_vector",
+):
     errors = []
     df_train = pd.read_csv(f"./data/TAWOS/{project_key}-train.csv")
     project_median = int(df_train["storypoint"].median())
@@ -94,7 +100,7 @@ def evaluate_project(project_key: str, collection: Collection, certainty=0.7):
             type=row["type"],
             projectName=project_key,
             certainty=certainty,
-            vectorizer="miniLM_vector",
+            vectorizer=vectorizer,
             components=row["components"],
         )
         true_sp = row["storypoint"]
@@ -129,6 +135,7 @@ def evaluate_project(project_key: str, collection: Collection, certainty=0.7):
     )
     return MAEpi, MdAE, SA, coverage
 
+
 def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_neighbors=5, similarity_threshold=0.7):
     # Fit nearest neighbors model
     nbrs = NearestNeighbors(n_neighbors=n_neighbors + 1, metric="cosine").fit(vectors)
@@ -156,13 +163,13 @@ def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_nei
 
     return np.mean(variances), len(variances) / len(vectors)
 
-def evaluate_vectors(collection: Collection, project_key: str):
+def evaluate_vectors(collection: Collection, project_key: str, vector: Literal["openai_vector", "miniLM_vector"] = "miniLM_vector"):
     vectors, storypoints = [], []
     collection = collection.with_tenant(project_key)
     for obj in collection.iterator(
         include_vector=True, return_properties=["storypoint"]
     ):
-        vectors.append(obj.vector["miniLM_vector"])
+        vectors.append(obj.vector[vector])
         storypoints.append(obj.properties["storypoint"])
     vectors_np, storypoints_np = np.array(vectors), np.array(storypoints)
     mean_variance, train_coverage = calculate_local_variance(vectors_np, storypoints_np, n_neighbors=5)
