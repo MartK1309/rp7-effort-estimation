@@ -6,8 +6,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy.stats import pearsonr
 import random
 from helpers.weaviate import estimateStorypoint
 from typing import Literal
@@ -15,7 +13,6 @@ from sklearn.neighbors import NearestNeighbors
 from data.comparison.comparison_data import data as existing_method_results
 import os
 from collections import defaultdict
-from scipy.stats import wilcoxon
 
 
 def random_guessing_mae(y_true_list, n_runs=1000, random_state=None):

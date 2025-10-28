@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import os
-
 from weaviate import WeaviateClient
 from weaviate.classes.config import Configure, Property, DataType, VectorDistances
 from weaviate.collections import Collection

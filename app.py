@@ -1,11 +1,10 @@
 import weaviate
 from helpers.descriptive_stats import show_project_metrics
-from helpers.weaviate import createCollection, upsertProject, estimateStorypoint
+from helpers.weaviate import createCollection, upsertProject
 from helpers.evaluation import plot_vector_variances, evaluate_project, evaluate_vectors, generate_overview_table, create_comparison_table
 from weaviate.classes.init import AdditionalConfig, Timeout
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import wilcoxon
 import threading
@@ -24,6 +23,7 @@ client = weaviate.connect_to_local(
 project_keys = ["DM"]
 
 project_list = [
+
     "ALOY",
     "APSTUD",
     "CLI",
@@ -51,7 +51,7 @@ project_keys = project_list
 # Data
 try:
     # Uncomment to reset existing weaviate collection
-    client.collections.delete("UserStoryCollection")
+    # client.collections.delete("UserStoryCollection")
     if client.collections.exists("UserStoryCollection"):
         collection = client.collections.use("UserStoryCollection")
     else:

@@ -1,5 +1,4 @@
 weaviate-client
-mysql
 umap-learn
 pandas
 numpy
