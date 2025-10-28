@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import os
 
 from weaviate import WeaviateClient
 from weaviate.classes.config import Configure, Property, DataType, VectorDistances
@@ -7,26 +8,33 @@ from weaviate.collections import Collection
 from weaviate.util import generate_uuid5
 from helpers.text_preprocessing import preprocess
 
+USE_LLM_EMBEDDINGS = os.getenv("USE_LLM_EMBEDDINGS", "false").lower() == "true"
 def createCollection(client: WeaviateClient):
     print("Creating collection 'UserStoryCollection'")
-    client.collections.create(
-        "UserStoryCollection",
-        vector_config=[
-            Configure.Vectors.text2vec_transformers(
-                name="miniLM_vector",
+    # Build vector_config conditionally: always include the local miniLM vectorizer,
+    # and include OpenAI vectorizer only when USE_LLM_EMBEDDINGS env var is set to true.
+    vector_config = [
+        Configure.Vectors.text2vec_transformers(
+            name="miniLM_vector",
+            vector_index_config=Configure.VectorIndex.hnsw(
+                distance_metric=VectorDistances.COSINE
+            ),
+        ),
+    ]
+    
+    if USE_LLM_EMBEDDINGS:
+        vector_config.append(
+            Configure.Vectors.text2vec_openai(
+                name="openai_vector",
+                model="text-embedding-3-small",
                 vector_index_config=Configure.VectorIndex.hnsw(
                     distance_metric=VectorDistances.COSINE
                 ),
-            ),
-            # Uncomment for LLM vectorization
-            # Configure.Vectors.text2vec_openai(
-            #     name="openai_vector",
-            #     model="text-embedding-3-small",
-            #     vector_index_config=Configure.VectorIndex.hnsw(
-            #         distance_metric=VectorDistances.COSINE
-            #     ),
-            # ),
-        ],
+            )
+        )
+    client.collections.create(
+        "UserStoryCollection",
+        vector_config=vector_config,
         multi_tenancy_config=Configure.multi_tenancy(
             enabled=True, auto_tenant_creation=True
         ),

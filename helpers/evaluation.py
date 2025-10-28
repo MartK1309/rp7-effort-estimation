@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import umap
 from weaviate.collections import Collection
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -13,6 +15,8 @@ from sklearn.neighbors import NearestNeighbors
 from data.comparison.comparison_data import data as existing_method_results
 import os
 from collections import defaultdict
+from scipy.stats import wilcoxon
+
 
 def random_guessing_mae(y_true_list, n_runs=1000, random_state=None):
     """
@@ -159,7 +163,7 @@ def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_nei
         variances.append(var)
 
     if len(variances) == 0:
-        return np.nan, 0  # no valid neighborhoods
+        return np.nan, 0 
 
     return np.mean(variances), len(variances) / len(vectors)
 
@@ -173,52 +177,28 @@ def evaluate_vectors(collection: Collection, project_key: str, vector: Literal["
         storypoints.append(obj.properties["storypoint"])
     vectors_np, storypoints_np = np.array(vectors), np.array(storypoints)
     mean_variance, train_coverage = calculate_local_variance(vectors_np, storypoints_np, n_neighbors=5)
+    umap_model = umap.UMAP(n_neighbors=5, min_dist=0.3, n_components=3, random_state=42)
+    vectors_3d = umap_model.fit_transform(vectors_np)
+    vectors_3d = np.array(vectors_3d)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    scatter = ax.scatter(
+        vectors_3d[:, 0],
+        vectors_3d[:, 1],
+        vectors_3d[:, 2], # type: ignore
+        c=storypoints,
+        cmap="viridis",
+        s=50,
+    )
+    fig.colorbar(scatter, label="Storypoint", ax=ax)
+    ax.set_xlabel("UMAP-1")
+    ax.set_ylabel("UMAP-2")
+    ax.set_zlabel("UMAP-3")
+    plt.title("UserStory Embeddings Colored by Storypoint")
+    plt.savefig(f"./output/{project_key}_umap_3d.png")
+    plt.close()
     return mean_variance, train_coverage
-    # umap_model = umap.UMAP(n_neighbors=5, min_dist=0.3, n_components=3, random_state=42)
-    # vectors_3d = umap_model.fit_transform(vectors_np)
-    # vectors_3d = np.array(vectors_3d)  # Ensure it's a NumPy array for slicing
-
-    # fig = plt.figure(figsize=(10, 7))
-    # ax = fig.add_subplot(111, projection="3d")
-    # scatter = ax.scatter(
-    #     vectors_3d[:, 0],
-    #     vectors_3d[:, 1],
-    #     vectors_3d[:, 2], # type: ignore
-    #     c=storypoints,
-    #     cmap="viridis",
-    #     s=50,
-    # )
-    # fig.colorbar(scatter, label="Storypoint", ax=ax)
-    # ax.set_xlabel("UMAP-1")
-    # ax.set_ylabel("UMAP-2")
-    # ax.set_zlabel("UMAP-3")
-    # plt.title("UserStory Embeddings Colored by Storypoint")
-    # # plt.show()
-    # plt.savefig(f"./output/{project_key}_umap_3d.png")
-    # plt.close()
-
-    # Compute semantic-label correlation
-    # sim_matrix = cosine_similarity(vectors_np)
-    # point_diff_matrix = np.abs(storypoints_np[:, None] - storypoints_np[None, :])
-
-    # # --- Step 3: Flatten both matrices (excluding diagonal) ---
-    # mask = ~np.eye(len(storypoints_np), dtype=bool)
-    # similarities = sim_matrix[mask]
-    # point_diffs = point_diff_matrix[mask]
-
-    # # --- Step 4: Compute correlation between similarity and negative distance ---
-    # corr, pval = pearsonr(similarities, -point_diffs)
-    # print(
-    #     f"Pearson correlation between semantic similarity and story point closeness: {corr:.3f} (p={pval:.2e})"
-    # )
-
-    # # Sample a subset for visualization if dataset is large
-    # sample_idx = random.sample(range(len(similarities)), min(10000, len(similarities)))
-    # plt.scatter(similarities[sample_idx], point_diffs[sample_idx], alpha=0.3, s=10)
-    # plt.xlabel("Cosine Similarity (semantic)")
-    # plt.ylabel("Absolute Story Point Difference")
-    # plt.title("Semantic Similarity vs Story Point Difference")
-    # plt.show()
 
 
 def save_as_latex(data, output_path):
@@ -324,4 +304,21 @@ def create_comparison_table(result_list, method_name):
     updated_data.extend(formatted_new_results)
     save_as_latex(updated_data, "./output/comparison_table.tex")
     return updated_data
-    # return formatted_new_results
+
+def plot_vector_variances(vector_variances_SBERT, vector_variances_llm):
+    projects = list(vector_variances_SBERT.keys())
+    values_sbert = [vector_variances_SBERT[p] for p in projects]
+    values_llm = [vector_variances_llm[p] for p in projects]
+    x = np.arange(len(projects))  
+    width = 0.4 
+    plt.bar(x - width/2, values_sbert, width, label='SBERT', color='lightcoral')
+    plt.bar(x + width/2, values_llm, width, label='LLM', color='cornflowerblue')
+    plt.ylabel("Average Local Story Point Std. Dev.")
+    plt.xlabel("Project")
+    plt.title("Average Local Story Point Variance per Project")
+    plt.xticks(x, projects, rotation=45, ha='right')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("./output/vector_variance_per_project.png", dpi=300)
+    plt.figure(figsize=(10, 6))
+    plt.close()
