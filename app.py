@@ -14,7 +14,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import numpy as np
-from scipy.stats import wilcoxon
 import threading
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,8 +65,8 @@ try:
     # Uncomment to show project metrics
     # show_project_metrics(project_list)
 
-    # for project_key in project_keys:
-    #     collection = upsertProject(collection, project_key)
+    for project_key in project_keys:
+        collection = upsertProject(collection, project_key)
 
     results_data_SBERT = []
     vector_variances_SBERT = {}
@@ -81,16 +80,16 @@ try:
 
     def evaluate_both(project_key):
         try:
-            # MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert = evaluate_project(
-            #     project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="miniLM_vector"
-            # )
-            # sbert_result = [project_key, MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert]
+            MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert = evaluate_project(
+                project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="miniLM_vector"
+            )
+            sbert_result = [project_key, MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert]
 
             if USE_LLM_EMBEDDINGS:
-                # MAEpi_llm, MdAE_llm, SA_llm, coverage_llm = evaluate_project(
-                #     project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="openai_vector"
-                # )
-                # llm_result = [project_key, MAEpi_llm, MdAE_llm, SA_llm, coverage_llm]
+                MAEpi_llm, MdAE_llm, SA_llm, coverage_llm = evaluate_project(
+                    project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="openai_vector"
+                )
+                llm_result = [project_key, MAEpi_llm, MdAE_llm, SA_llm, coverage_llm]
                 sbert_mean_variance, sbert_coverage, llm_mean_variance, llm_coverage = (
                     evaluate_vectors(collection, project_key, SIMILARITY_THRESHOLD)
                 )
@@ -102,14 +101,14 @@ try:
                     sbert_coverage,
                     llm_mean_variance,
                     llm_coverage,
-                    None,
+                    sbert_result,
+                    llm_result,
+                    None
                 )
             # If not using LLM embeddings, return same 6-tuple shape with LLM fields and exc set to None
             return (project_key, None, None, None, None, None)
 
         except Exception as e:
-            # Return the exception so the caller can log/handle it without losing other results
-            # return (project_key, None, None, None, None, e)
             return (project_key, None, None, None, None, e)
 
     # Submit all projects concurrently and collect results
@@ -119,47 +118,38 @@ try:
             futures.append(executor.submit(evaluate_both, project_key))
 
         for fut in as_completed(futures):
-            # project_key, sbert_result, sbert_variance, llm_result, llm_variance, train_coverage_sbert, train_coverage_llm, exc = fut.result()
             (
                 project_key,
                 sbert_mean_variance,
                 sbert_coverage,
                 llm_mean_variance,
                 llm_coverage,
+                sbert_result,
+                llm_result,
                 exc,
             ) = fut.result()
-            print(project_key)
-            print(llm_coverage)
             if exc is not None:
                 print(f"Error evaluating project {project_key}: {exc}")
                 continue
             with results_lock:
-
-                # results_data_SBERT.append(sbert_result)
+                results_data_SBERT.append(sbert_result)
                 vector_variances_SBERT[project_key] = sbert_mean_variance
                 train_coverages_SBERT[project_key] = sbert_coverage
                 if USE_LLM_EMBEDDINGS:
                     vector_variances_llm[project_key] = llm_mean_variance
                     train_coverages_llm[project_key] = llm_coverage
-                # if USE_LLM_EMBEDDINGS and llm_result is not None:
-                #     # results_data_llm.append(llm_result)
-                #     vector_variances_llm[project_key] = llm_variance
-                #     train_coverages_llm[project_key] = train_coverage_llm
-
+                    if llm_result is not None:
+                        results_data_llm.append(llm_result)
+                    
     projects = list(vector_variances_SBERT.keys())
     values_sbert = [vector_variances_SBERT[p] for p in projects]
 
     # Generate LateX tables
-    # # generate_overview_table(results_data_SBERT)
+    # generate_overview_table(results_data_SBERT)
     # create_comparison_table(results_data_SBERT, "SBERT-SB-SE")
     if USE_LLM_EMBEDDINGS:
         plot_vector_variances(vector_variances_SBERT, vector_variances_llm)
         values_llm = [vector_variances_llm[p] for p in projects]
-        # print("SBERT Train coverage:")
-        # for p in projects:
-        #     print(
-        #         f"{p}, SBERT: {train_coverages_SBERT[p]:.3f}, LLM: {train_coverages_llm[p]:.3f}"
-        #     )
         mean_sbert, std_sbert = np.mean(values_sbert), np.std(values_sbert)
         mean_llm, std_llm = np.mean(values_llm), np.std(values_llm)
 

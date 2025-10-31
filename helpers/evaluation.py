@@ -112,9 +112,6 @@ def evaluate_project(
         else:
             # Calculate absolute error
             errors.append(abs(true_sp - estimate_sp))
-    print(
-        f"Out of {len(df_testset)} there were {no_similar_stories} with no similar stories, so for those the project median of {project_median} was used"
-    )
     MAEpi = np.mean(errors)
     MdAE = np.median(errors)
 

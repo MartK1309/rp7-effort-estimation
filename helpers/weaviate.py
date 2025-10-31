@@ -12,8 +12,6 @@ load_dotenv()
 USE_LLM_EMBEDDINGS = os.getenv("USE_LLM_EMBEDDINGS", "false").lower() == "true"
 def createCollection(client: WeaviateClient):
     print("Creating collection 'UserStoryCollection'")
-    # Build vector_config conditionally: always include the local miniLM vectorizer,
-    # and include OpenAI vectorizer only when USE_LLM_EMBEDDINGS env var is set to true.
     vector_config = [
         Configure.Vectors.text2vec_transformers(
             name="miniLM_vector",
@@ -101,12 +99,7 @@ def upsertProject(collection: Collection, projectName: str):
     except Exception as e:
         print(f"Error when upserting project {projectName}: {e}")
     return collection
-    # Get first 10 rows to verify
-    # items = client.collections.use("UserStoryCollection").query.fetch_objects(limit=10)
-    # item = collection.query.near_text("Custom framework and widget", limit=5)
-    # print(item.objects)
 highest_certainty = 0
-# TODO: Move to different module
 def estimateStorypoint(
     collection: Collection,
     title: str,
@@ -119,13 +112,6 @@ def estimateStorypoint(
     k=5,
 ):
     collection = collection.with_tenant(projectName)
-    # For single property search
-    # result = collection.query.near_text(text, limit=5, certainty=.8)
-    # Multiple properties search
-    # Weaviate automatically sorts by alphabet, to description comes before title
-    # result = collection.query.near_text(
-    #     query=description + " " + title + " " + type, target_vector="miniLM_vector", certainty=certainty, limit=10,return_metadata=["certainty"]
-    # )
     result = collection.query.near_text(
         query=description + " " + title + " " + type + " " + components,
         target_vector=vectorizer,
@@ -151,11 +137,9 @@ def estimateStorypoint(
                 storypoint = int(storypoint_str)
                 storypoints.append(storypoint)
                 weights.append(similarity)
-                print(f"Storypoint raw: '{storypoint_str}', similarity: {similarity}")
                 global highest_certainty
                 if similarity > highest_certainty:
                     highest_certainty = similarity
-                    print(f"New highest certainty: {highest_certainty}")
 
         if storypoints and weights and sum(weights) > 0 and similarity is not None:
             # sort storypoints and corresponding weights
