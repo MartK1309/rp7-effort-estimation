@@ -94,7 +94,6 @@ try:
                     evaluate_vectors(collection, project_key, SIMILARITY_THRESHOLD)
                 )
 
-                # Return a consistent 6-tuple: (project_key, sbert_variance, train_coverage_sbert, llm_variance, train_coverage_llm, exc)
                 return (
                     project_key,
                     sbert_mean_variance,
@@ -105,13 +104,11 @@ try:
                     llm_result,
                     None
                 )
-            # If not using LLM embeddings, return same 6-tuple shape with LLM fields and exc set to None
             return (project_key, None, None, None, None, None)
 
         except Exception as e:
             return (project_key, None, None, None, None, e)
 
-    # Submit all projects concurrently and collect results
     futures = []
     with ThreadPoolExecutor(max_workers=min(8, len(project_keys))) as executor:
         for project_key in project_keys:
