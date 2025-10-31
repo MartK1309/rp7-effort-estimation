@@ -14,4 +14,4 @@ def show_project_metrics(project_keys):
     plt.xticks(rotation=45)
     plt.grid(axis='y', alpha=0.75)
     plt.tight_layout()
-    plt.savefig(f"./output/all_projects_num_user_stories.png")
+    plt.savefig(f"./data/comparison/all_projects_num_user_stories.png")

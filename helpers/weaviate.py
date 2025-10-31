@@ -6,7 +6,9 @@ from weaviate.classes.config import Configure, Property, DataType, VectorDistanc
 from weaviate.collections import Collection
 from weaviate.util import generate_uuid5
 from helpers.text_preprocessing import preprocess
+from dotenv import load_dotenv
 
+load_dotenv()
 USE_LLM_EMBEDDINGS = os.getenv("USE_LLM_EMBEDDINGS", "false").lower() == "true"
 def createCollection(client: WeaviateClient):
     print("Creating collection 'UserStoryCollection'")
@@ -74,7 +76,7 @@ def upsertProject(collection: Collection, projectName: str):
     collection = collection.with_tenant(projectName)
     try:
         df = pd.read_csv(f"./data/TAWOS/{projectName}-train.csv")
-        with collection.batch.fixed_size(batch_size=10) as batch:
+        with collection.batch.fixed_size(batch_size=5) as batch:
             for _, row in df.iterrows():
                 # Preprocess title and description according to the same steps as in LHC-SE
                 preprocessed_title = preprocess(row["title"])

@@ -3,7 +3,8 @@ import pandas as pd
 import umap
 from weaviate.collections import Collection
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import random
@@ -37,6 +38,7 @@ def random_guessing_mae(y_true_list, n_runs=1000, random_state=None):
 
     return np.mean(maes)
 
+
 def generate_overview_table(results_data):
     latex_table = """
     \\begin{table}[h!]
@@ -65,9 +67,7 @@ def generate_overview_table(results_data):
         # Format coverage with one decimal and escape percent symbol for LaTeX
         coverage_str = f"{coverage_pct:.1f}\\%"
 
-        latex_table += (
-            f"{project_key_escaped} & {row[1]:.3f} & {row[2]:.3f} & {row[3]:.3f} & {coverage_str} \\\\n+"
-        )
+        latex_table += f"{project_key_escaped} & {row[1]:.3f} & {row[2]:.3f} & {row[3]:.3f} & {coverage_str} \\\\n+"
 
     # Add the closing lines for the table
     latex_table += """\\hline
@@ -76,14 +76,14 @@ def generate_overview_table(results_data):
   \\label{tab:project_metrics}
   \\end{table}
   """
-    with open(f"./output/all_projects_results.tex", "w") as f:
+    with open(f"./data/comparison/all_projects_results.tex", "w") as f:
         f.write(latex_table.strip())
 
 
 def evaluate_project(
     project_key: str,
     collection: Collection,
-    certainty=0.8,
+    similarity_threshold,
     vectorizer: Literal["openai_vector", "miniLM_vector"] = "miniLM_vector",
 ):
     errors = []
@@ -100,7 +100,7 @@ def evaluate_project(
             description=row["description_text"],
             type=row["type"],
             projectName=project_key,
-            certainty=certainty,
+            certainty=similarity_threshold,
             vectorizer=vectorizer,
             components=row["components"],
         )
@@ -137,7 +137,13 @@ def evaluate_project(
     return MAEpi, MdAE, SA, coverage
 
 
-def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_neighbors=5, similarity_threshold=0.7):
+def calculate_local_variance(
+    stories,
+    vectors: np.ndarray,
+    storypoints: np.ndarray,
+    n_neighbors=5,
+    similarity_threshold=0.7,
+):
     # Fit nearest neighbors model
     nbrs = NearestNeighbors(n_neighbors=n_neighbors + 1, metric="cosine").fit(vectors)
     distances, indices = nbrs.kneighbors(vectors)
@@ -145,7 +151,7 @@ def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_nei
     # Convert cosine distance to cosine similarity
     similarities = 1 - distances
 
-    variances = []
+    variance_results = []
     for i, idxs in enumerate(indices):
         sims = similarities[i][1:]  # exclude self
         neighbors = idxs[1:]  # exclude self
@@ -157,45 +163,107 @@ def calculate_local_variance(vectors: np.ndarray, storypoints: np.ndarray, n_nei
 
         neighbor_points = storypoints[neighbors][mask]
         var = np.std(neighbor_points)
-        variances.append(var)
+        variance_results.append(
+            {
+                "id": stories[i].uuid,
+                "variance": float(var),  # Convert numpy float to native Python float
+            }
+        )
 
-    if len(variances) == 0:
-        return np.nan, 0 
+    return variance_results
 
-    return np.mean(variances), len(variances) / len(vectors)
 
-def evaluate_vectors(collection: Collection, project_key: str, vector: Literal["openai_vector", "miniLM_vector"] = "miniLM_vector"):
-    vectors, storypoints = [], []
+def evaluate_vectors(collection: Collection, project_key: str, similarity_threshold):
+    stories, vectors_SBERT, vectors_LLM, storypoints = [], [], [], []
     collection = collection.with_tenant(project_key)
     for obj in collection.iterator(
         include_vector=True, return_properties=["storypoint"]
     ):
-        vectors.append(obj.vector[vector])
+        stories.append(obj)
+        vectors_SBERT.append(obj.vector["miniLM_vector"])
+        vectors_LLM.append(obj.vector["openai_vector"])
         storypoints.append(obj.properties["storypoint"])
-    vectors_np, storypoints_np = np.array(vectors), np.array(storypoints)
-    mean_variance, train_coverage = calculate_local_variance(vectors_np, storypoints_np, n_neighbors=5)
-    umap_model = umap.UMAP(n_neighbors=5, min_dist=0.3, n_components=3, random_state=42)
-    vectors_3d = umap_model.fit_transform(vectors_np)
-    vectors_3d = np.array(vectors_3d)
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-    scatter = ax.scatter(
-        vectors_3d[:, 0],
-        vectors_3d[:, 1],
-        vectors_3d[:, 2], # type: ignore
-        c=storypoints,
-        cmap="viridis",
-        s=50,
+    vectors_np_SBERT, storypoints_np_SBERT = np.array(vectors_SBERT), np.array(
+        storypoints
     )
-    fig.colorbar(scatter, label="Storypoint", ax=ax)
-    ax.set_xlabel("UMAP-1")
-    ax.set_ylabel("UMAP-2")
-    ax.set_zlabel("UMAP-3")
-    plt.title("UserStory Embeddings Colored by Storypoint")
-    plt.savefig(f"./output/{project_key}_umap_3d.png")
-    plt.close()
-    return mean_variance, train_coverage
+    variance_results_SBERT = calculate_local_variance(
+        stories,
+        vectors_np_SBERT,
+        storypoints_np_SBERT,
+        n_neighbors=5,
+        similarity_threshold=similarity_threshold,
+    )
+    vectors_np_LLM, storypoints_np_LLM = np.array(vectors_LLM), np.array(storypoints)
+    variance_results_LLM = calculate_local_variance(
+        stories,
+        vectors_np_LLM,
+        storypoints_np_LLM,
+        n_neighbors=5,
+        similarity_threshold=similarity_threshold,
+    )
+
+    # Get the IDs from both result sets
+    sbert_ids = {result["id"] for result in variance_results_SBERT}
+    llm_ids = {result["id"] for result in variance_results_LLM}
+
+    # Find common IDs
+    common_ids = sbert_ids.intersection(llm_ids)
+
+    # Filter both result lists to only include common IDs
+    filtered_sbert_results = [
+        result for result in variance_results_SBERT if result["id"] in common_ids
+    ]
+    filtered_llm_results = [
+        result for result in variance_results_LLM if result["id"] in common_ids
+    ]
+
+    # Calculate mean of the variances for both filtered result lists
+    # If a filtered list is empty, set the mean to NaN
+    if len(filtered_sbert_results) > 0:
+        sbert_mean_variance = float(
+            np.mean([r["variance"] for r in filtered_sbert_results])
+        )
+    else:
+        sbert_mean_variance = float("nan")
+
+    if len(filtered_llm_results) > 0:
+        llm_mean_variance = float(
+            np.mean([r["variance"] for r in filtered_llm_results])
+        )
+    else:
+        llm_mean_variance = float("nan")
+
+    # Keep return signature unchanged (still returns the filtered lists)
+    sbert_coverage = (
+        len(filtered_sbert_results) / len(stories) * 100 if len(stories) > 0 else 0.0
+    )
+    llm_coverage = (
+        len(filtered_llm_results) / len(stories) * 100 if len(stories) > 0 else 0.0
+    )
+    return sbert_mean_variance, sbert_coverage, llm_mean_variance, llm_coverage
+
+    # umap_model = umap.UMAP(n_neighbors=5, min_dist=0.3, n_components=3, random_state=42)
+    # vectors_3d = umap_model.fit_transform(vectors_np)
+    # vectors_3d = np.array(vectors_3d)
+
+    # fig = plt.figure(figsize=(10, 7))
+    # ax = fig.add_subplot(111, projection="3d")
+    # scatter = ax.scatter(
+    #     vectors_3d[:, 0],
+    #     vectors_3d[:, 1],
+    #     vectors_3d[:, 2], # type: ignore
+    #     c=storypoints,
+    #     cmap="viridis",
+    #     s=50,
+    # )
+    # fig.colorbar(scatter, label="Storypoint", ax=ax)
+    # ax.set_xlabel("UMAP-1")
+    # ax.set_ylabel("UMAP-2")
+    # ax.set_zlabel("UMAP-3")
+    # plt.title("UserStory Embeddings Colored by Storypoint")
+    # plt.savefig(f"./output/{project_key}_umap_3d.png")
+    # plt.close()
+    # return mean_variance, train_coverage
 
 
 def save_as_latex(data, output_path):
@@ -288,13 +356,13 @@ def create_comparison_table(result_list, method_name):
         mae = result_item[1]
         mdae = result_item[2]
         sa = result_item[3]
-        
+
         result_dict = {
-            'Project': project_key,
-            'Method': method_name,
-            'MAE': mae,
-            'MdAE': mdae,
-            'SA': sa
+            "Project": project_key,
+            "Method": method_name,
+            "MAE": mae,
+            "MdAE": mdae,
+            "SA": sa,
         }
         formatted_new_results.append(result_dict)
     updated_data = existing_method_results.copy()
@@ -306,14 +374,14 @@ def plot_vector_variances(vector_variances_SBERT, vector_variances_llm):
     projects = list(vector_variances_SBERT.keys())
     values_sbert = [vector_variances_SBERT[p] for p in projects]
     values_llm = [vector_variances_llm[p] for p in projects]
-    x = np.arange(len(projects))  
-    width = 0.4 
-    plt.bar(x - width/2, values_sbert, width, label='SBERT', color='lightcoral')
-    plt.bar(x + width/2, values_llm, width, label='LLM', color='cornflowerblue')
+    x = np.arange(len(projects))
+    width = 0.4
+    plt.bar(x - width / 2, values_sbert, width, label="SBERT", color="lightcoral")
+    plt.bar(x + width / 2, values_llm, width, label="LLM", color="cornflowerblue")
     plt.ylabel("Average Local Story Point Std. Dev.")
     plt.xlabel("Project")
     plt.title("Average Local Story Point Variance per Project")
-    plt.xticks(x, projects, rotation=45, ha='right')
+    plt.xticks(x, projects, rotation=45, ha="right")
     plt.legend()
     plt.tight_layout()
     plt.savefig("./output/vector_variance_per_project.png", dpi=300)

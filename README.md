@@ -92,7 +92,6 @@ This will:
 
 Results are generated in the `output/` directory:
 - `comparison_table.tex`: Detailed comparison across all methods
-- `all_projects_results.tex`: Comprehensive results for all projects
 
 ## License
 
