@@ -84,7 +84,7 @@ python app.py
 
 This will:
 1. Load the dataset
-2. Generate & upsert embeddings from training seet
+2. Generate & upsert embeddings from training set
 4. Perform story point estimation on testing set
 5. Evaluate results and generate comparison tables
 
