@@ -68,7 +68,6 @@ def createCollection(client: WeaviateClient):
     )
     return client.collections.use("UserStoryCollection")
 
-
 def upsertProject(collection: Collection, projectName: str):
     print(f"Upserting project {projectName}")
     collection = collection.with_tenant(projectName)
@@ -113,7 +112,7 @@ def estimateStorypoint(
 ):
     collection = collection.with_tenant(projectName)
     result = collection.query.near_text(
-        query=description + " " + title + " " + type + " " + components,
+        query=description + " " + title,
         target_vector=vectorizer,
         certainty=certainty,
         limit=k,

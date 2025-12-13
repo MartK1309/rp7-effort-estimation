@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 from helpers.weaviate import estimateStorypoint
+from helpers.text_preprocessing import preprocess
 from typing import Literal
 from sklearn.neighbors import NearestNeighbors
 from data.comparison.comparison_data import data as existing_method_results
@@ -94,10 +95,12 @@ def evaluate_project(
     no_similar_stories = 0
     # Loop through testset
     for index, row in df_testset.iterrows():
+        preprocessed_title = preprocess(row["title"])
+        preprocessed_description = preprocess(row["description_text"])
         estimate_sp = estimateStorypoint(
             collection,
-            title=row["title"],
-            description=row["description_text"],
+            title=preprocessed_title,
+            description=preprocessed_description,
             type=row["type"],
             projectName=project_key,
             certainty=similarity_threshold,

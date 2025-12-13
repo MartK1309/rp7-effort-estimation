@@ -3,8 +3,8 @@ import re
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-nltk.download("punkt_tab")
-nltk.download("stopwords")
+# nltk.download("punkt_tab")
+# nltk.download("stopwords")
 extended_stopwords = [
     "a",
     "aaaaa",
@@ -479,11 +479,10 @@ def preprocess(text: str):
     tokens = word_tokenize(text)
 
     # 5. Remove stopwords
-    stops = set(stopwords.words("english")).union(extended_stopwords)
-    tokens = [t for t in tokens if t not in stops]
+    # stops = set(stopwords.words("english")).union(extended_stopwords)
+    # tokens = [t for t in tokens if t not in stops]
 
     # 6. Remove short tokens (< 2 characters)
     tokens = [t for t in tokens if len(t) >= 2]
-
 
     return " ".join(tokens)
