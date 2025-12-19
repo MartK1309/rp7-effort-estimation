@@ -111,7 +111,8 @@ def evaluate_project(
         if estimate_sp is None:
             # Add median of project
             no_similar_stories += 1
-            errors.append(abs(true_sp - project_median))
+            # TODO: Make this enabled based on properties
+            # errors.append(abs(true_sp - project_median))
         else:
             # Calculate absolute error
             errors.append(abs(true_sp - estimate_sp))
