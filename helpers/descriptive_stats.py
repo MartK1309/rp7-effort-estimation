@@ -15,3 +15,19 @@ def show_project_metrics(project_keys):
     plt.grid(axis='y', alpha=0.75)
     plt.tight_layout()
     plt.savefig(f"./data/comparison/all_projects_num_user_stories.png")
+
+    # Story Points Distribution
+    story_points_data = []
+    for project_key in project_keys:
+        df_train = pd.read_csv(f"./data/TAWOS/{project_key}-train.csv")
+        story_points_data.append(df_train['storypoint'].dropna())
+
+    plt.figure(figsize=(12, 6))
+    plt.boxplot(story_points_data, tick_labels=project_keys)
+    plt.title('Distribution of Story Points per Project')
+    plt.xlabel('Project')
+    plt.ylabel('Story Points')
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', alpha=0.75)
+    plt.tight_layout()
+    plt.savefig(f"./data/comparison/all_projects_story_points_distribution.png")

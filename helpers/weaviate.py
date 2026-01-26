@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
-from weaviate import WeaviateClient
+import weaviate
 from weaviate.classes.config import Configure, Property, DataType, VectorDistances
 from weaviate.collections import Collection
 from weaviate.util import generate_uuid5
@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 USE_LLM_EMBEDDINGS = os.getenv("USE_LLM_EMBEDDINGS", "false").lower() == "true"
-def createCollection(client: WeaviateClient):
+def createCollection(client: weaviate.WeaviateClient):
     print("Creating collection 'UserStoryCollection'")
     vector_config = [
         Configure.Vectors.text2vec_transformers(
@@ -69,33 +69,44 @@ def createCollection(client: WeaviateClient):
     return client.collections.use("UserStoryCollection")
 
 
-def upsertProject(collection: Collection, projectName: str):
+def upsertProject(collection: Collection, projectName: str, all_data=False):
     print(f"Upserting project {projectName}")
     collection = collection.with_tenant(projectName)
     try:
-        df = pd.read_csv(f"./data/TAWOS/{projectName}-train.csv")
-        with collection.batch.fixed_size(batch_size=5) as batch:
-            for _, row in df.iterrows():
-                # Preprocess title and description according to the same steps as in LHC-SE
-                preprocessed_title = preprocess(row["title"])
-                preprocessed_description = preprocess(row["description_text"])
-                obj = {
-                    "title": preprocessed_title,
-                    "description": preprocessed_description,
-                    "storypoint": int(row["storypoint"]),
-                    "type": row["type"],
-                    "components": row["components"],
-                }
-                batch.add_object(uuid=generate_uuid5(row["issuekey"]), properties=obj)
-            if batch.number_errors > 10:
-                print("Batch import stopped due to excessive errors.")
-        failed_objects = collection.batch.failed_objects
-        if failed_objects:
-            print(f"Number of failed imports: {len(failed_objects)}")
-            print(f"First failed object: {failed_objects[0]}")
+        files_to_process = [f"./data/TAWOS/{projectName}-train.csv"]
+        if all_data:
+            files_to_process.extend([
+                f"./data/TAWOS/{projectName}-valid.csv",
+                f"./data/TAWOS/{projectName}-test.csv"
+            ])
+        
+        for file_path in files_to_process:
+            if not os.path.exists(file_path):
+                print(f"File {file_path} not found. Skipping...")
+                continue
+                
+            df = pd.read_csv(file_path)
+            with collection.batch.fixed_size(batch_size=5) as batch:
+                for _, row in df.iterrows():
+                    # Preprocess title and description according to the same steps as in LHC-SE
+                    preprocessed_title = preprocess(row["title"])
+                    preprocessed_description = preprocess(row["description_text"])
+                    obj = {
+                        "title": preprocessed_title,
+                        "description": preprocessed_description,
+                        "storypoint": int(row["storypoint"]),
+                        "type": row["type"],
+                        "components": row["components"],
+                    }
+                    batch.add_object(uuid=generate_uuid5(row["issuekey"]), properties=obj)
+                if batch.number_errors > 10:
+                    print(f"Batch import for {file_path} stopped due to excessive errors.")
+            
+            failed_objects = collection.batch.failed_objects
+            if failed_objects:
+                print(f"Number of failed imports in {file_path}: {len(failed_objects)}")
+                print(f"First failed object: {failed_objects[0]}")
     # Catch error
-    except FileNotFoundError:
-        print(f"Project with key {projectName} was not found. Skipping...")
     except Exception as e:
         print(f"Error when upserting project {projectName}: {e}")
     return collection

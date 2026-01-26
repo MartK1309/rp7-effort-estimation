@@ -3,6 +3,8 @@ from helpers.descriptive_stats import show_project_metrics
 from helpers.weaviate import createCollection, upsertProject
 import pingouin as pg
 from helpers.evaluation import (
+    calculate_semantic_sp_correlation,
+    plot_binned_distance_vs_spdiff,
     plot_vector_variances,
     evaluate_project,
     evaluate_vectors,
@@ -58,103 +60,119 @@ project_keys = project_list
 try:
     # Uncomment to reset existing weaviate collection
     # client.collections.delete("UserStoryCollection")
+
     if client.collections.exists("UserStoryCollection"):
         collection = client.collections.use("UserStoryCollection")
     else:
         collection = createCollection(client)
+    # for project_key in project_keys:
+    #     collection = upsertProject(collection, project_key, all_data=True)
     # Uncomment to show project metrics
-    # show_project_metrics(project_list)
-
+    show_project_metrics(project_list)
     for project_key in project_keys:
-        collection = upsertProject(collection, project_key)
+        corr, p, semantic_distances, sp_differences = calculate_semantic_sp_correlation( # type: ignore
+            collection, project_key, return_samples=True
+        )
 
-    results_data_SBERT = []
-    vector_variances_SBERT = {}
-    train_coverages_SBERT = {}
+        print(f"Project: {project_key}")
+        print(f"Spearman Correlation: {corr:.4f}")
+        print(f"P-value: {p:.4e}")
 
-    results_data_llm = []
-    vector_variances_llm = {}
-    train_coverages_llm = {}
+        plot_binned_distance_vs_spdiff(semantic_distances, sp_differences, project_key) 
+        
+        # corr, p = calculate_semantic_sp_correlation(collection, project_key)
+        # print(f"Project: {project_key}")
+        # print(f"Spearman Correlation: {corr:.4f}")
+        # print(f"P-value: {p:.4e}")
 
-    results_lock = threading.Lock()
 
-    def evaluate_both(project_key):
-        try:
-            MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert = evaluate_project(
-                project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="miniLM_vector"
-            )
-            sbert_result = [project_key, MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert]
+#     results_data_SBERT = []
+#     vector_variances_SBERT = {}
+#     train_coverages_SBERT = {}
 
-            if USE_LLM_EMBEDDINGS:
-                MAEpi_llm, MdAE_llm, SA_llm, coverage_llm = evaluate_project(
-                    project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="openai_vector"
-                )
-                llm_result = [project_key, MAEpi_llm, MdAE_llm, SA_llm, coverage_llm]
-                sbert_mean_variance, sbert_coverage, llm_mean_variance, llm_coverage = (
-                    evaluate_vectors(collection, project_key, SIMILARITY_THRESHOLD)
-                )
+#     results_data_llm = []
+#     vector_variances_llm = {}
+#     train_coverages_llm = {}
 
-                return (
-                    project_key,
-                    sbert_mean_variance,
-                    sbert_coverage,
-                    llm_mean_variance,
-                    llm_coverage,
-                    sbert_result,
-                    llm_result,
-                    None
-                )
-            return (project_key, None, None, None, None, None)
+#     results_lock = threading.Lock()
 
-        except Exception as e:
-            return (project_key, None, None, None, None, e)
+#     def evaluate_both(project_key):
+#         try:
+#             MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert = evaluate_project(
+#                 project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="miniLM_vector"
+#             )
+#             sbert_result = [project_key, MAEpi_sbert, MdAE_sbert, SA_sbert, coverage_sbert]
 
-    futures = []
-    with ThreadPoolExecutor(max_workers=min(8, len(project_keys))) as executor:
-        for project_key in project_keys:
-            futures.append(executor.submit(evaluate_both, project_key))
+#             if USE_LLM_EMBEDDINGS:
+#                 MAEpi_llm, MdAE_llm, SA_llm, coverage_llm = evaluate_project(
+#                     project_key, collection, similarity_threshold=SIMILARITY_THRESHOLD, vectorizer="openai_vector"
+#                 )
+#                 llm_result = [project_key, MAEpi_llm, MdAE_llm, SA_llm, coverage_llm]
+#                 sbert_mean_variance, sbert_coverage, llm_mean_variance, llm_coverage = (
+#                     evaluate_vectors(collection, project_key, SIMILARITY_THRESHOLD)
+#                 )
 
-        for fut in as_completed(futures):
-            (
-                project_key,
-                sbert_mean_variance,
-                sbert_coverage,
-                llm_mean_variance,
-                llm_coverage,
-                sbert_result,
-                llm_result,
-                exc,
-            ) = fut.result()
-            if exc is not None:
-                print(f"Error evaluating project {project_key}: {exc}")
-                continue
-            with results_lock:
-                results_data_SBERT.append(sbert_result)
-                vector_variances_SBERT[project_key] = sbert_mean_variance
-                train_coverages_SBERT[project_key] = sbert_coverage
-                if USE_LLM_EMBEDDINGS:
-                    vector_variances_llm[project_key] = llm_mean_variance
-                    train_coverages_llm[project_key] = llm_coverage
-                    if llm_result is not None:
-                        results_data_llm.append(llm_result)
-                    
-    projects = list(vector_variances_SBERT.keys())
-    values_sbert = [vector_variances_SBERT[p] for p in projects]
+#                 return (
+#                     project_key,
+#                     sbert_mean_variance,
+#                     sbert_coverage,
+#                     llm_mean_variance,
+#                     llm_coverage,
+#                     sbert_result,
+#                     llm_result,
+#                     None
+#                 )
+#             return (project_key, None, None, None, None, None)
 
-    # Generate LateX tables
-    # generate_overview_table(results_data_SBERT)
-    # create_comparison_table(results_data_SBERT, "SBERT-SB-SE")
-    if USE_LLM_EMBEDDINGS:
-        plot_vector_variances(vector_variances_SBERT, vector_variances_llm)
-        values_llm = [vector_variances_llm[p] for p in projects]
-        mean_sbert, std_sbert = np.mean(values_sbert), np.std(values_sbert)
-        mean_llm, std_llm = np.mean(values_llm), np.std(values_llm)
+#         except Exception as e:
+#             return (project_key, None, None, None, None, e)
 
-        wilcoxon_stats = pg.wilcoxon(values_sbert, values_llm)
-        print(f"Wilcoxon test for Similarity threshold {SIMILARITY_THRESHOLD}:")
-        print(wilcoxon_stats)
-        print(f"SBERT mean variance for Similarity threshold {SIMILARITY_THRESHOLD}: {mean_sbert:.3f} ± {std_sbert:.3f}")
-        print(f"LLM mean variance for Similarity threshold {SIMILARITY_THRESHOLD}: {mean_llm:.3f} ± {std_llm:.3f}")
+#     futures = []
+#     with ThreadPoolExecutor(max_workers=min(8, len(project_keys))) as executor:
+#         for project_key in project_keys:
+#             futures.append(executor.submit(evaluate_both, project_key))
+
+#         for fut in as_completed(futures):
+#             (
+#                 project_key,
+#                 sbert_mean_variance,
+#                 sbert_coverage,
+#                 llm_mean_variance,
+#                 llm_coverage,
+#                 sbert_result,
+#                 llm_result,
+#                 exc,
+#             ) = fut.result()
+#             if exc is not None:
+#                 print(f"Error evaluating project {project_key}: {exc}")
+#                 continue
+#             with results_lock:
+#                 results_data_SBERT.append(sbert_result)
+#                 vector_variances_SBERT[project_key] = sbert_mean_variance
+#                 train_coverages_SBERT[project_key] = sbert_coverage
+#                 if USE_LLM_EMBEDDINGS:
+#                     vector_variances_llm[project_key] = llm_mean_variance
+#                     train_coverages_llm[project_key] = llm_coverage
+#                     if llm_result is not None:
+#                         results_data_llm.append(llm_result)
+
+#     projects = list(vector_variances_SBERT.keys())
+#     values_sbert = [vector_variances_SBERT[p] for p in projects]
+
+#     # Generate LateX tables
+#     # generate_overview_table(results_data_SBERT)
+#     # create_comparison_table(results_data_SBERT, "SBERT-SB-SE")
+#     if USE_LLM_EMBEDDINGS:
+#         plot_vector_variances(vector_variances_SBERT, vector_variances_llm)
+#         values_llm = [vector_variances_llm[p] for p in projects]
+#         mean_sbert, std_sbert = np.mean(values_sbert), np.std(values_sbert)
+#         mean_llm, std_llm = np.mean(values_llm), np.std(values_llm)
+
+#         wilcoxon_stats = pg.wilcoxon(values_sbert, values_llm)
+#         print(f"Wilcoxon test for Similarity threshold {SIMILARITY_THRESHOLD}:")
+#         print(wilcoxon_stats)
+#         print(f"SBERT mean variance for Similarity threshold {SIMILARITY_THRESHOLD}: {mean_sbert:.3f} ± {std_sbert:.3f}")
+#         print(f"LLM mean variance for Similarity threshold {SIMILARITY_THRESHOLD}: {mean_llm:.3f} ± {std_llm:.3f}")
 
 
 finally:

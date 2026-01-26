@@ -3,6 +3,7 @@ import pandas as pd
 import umap
 from weaviate.collections import Collection
 import matplotlib
+from scipy.stats import rankdata
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -16,6 +17,10 @@ from data.comparison.comparison_data import data as existing_method_results
 import os
 from collections import defaultdict
 
+import numpy as np
+from scipy.spatial.distance import cosine
+from scipy.stats import spearmanr
+import random
 
 def random_guessing_mae(y_true_list, n_runs=1000, random_state=None):
     """
@@ -265,6 +270,106 @@ def evaluate_vectors(collection: Collection, project_key: str, similarity_thresh
     # plt.savefig(f"./output/{project_key}_umap_3d.png")
     # plt.close()
     # return mean_variance, train_coverage
+
+
+def plot_binned_distance_vs_spdiff(
+    semantic_distances, sp_differences, project_key, num_bins=20
+):
+    # Quantile bins (robust to non-uniform density)
+    bins = np.quantile(semantic_distances, np.linspace(0, 1, num_bins + 1))
+
+    bin_centers = []
+    mean_sp_diff = []
+    median_sp_diff = []
+
+    for i in range(num_bins):
+        mask = (semantic_distances >= bins[i]) & (semantic_distances < bins[i + 1])
+        if np.sum(mask) > 0:
+            bin_centers.append(np.mean(semantic_distances[mask]))
+            mean_sp_diff.append(np.mean(sp_differences[mask]))
+            median_sp_diff.append(np.median(sp_differences[mask]))
+
+    plt.figure(figsize=(7, 5))
+    plt.plot(bin_centers, mean_sp_diff, marker="o", label="Mean SP rank diff")
+    plt.plot(
+        bin_centers,
+        median_sp_diff,
+        marker="s",
+        linestyle="--",
+        label="Median SP rank diff",
+    )
+
+    plt.xlabel("Semantic Distance (1 - cosine similarity)")
+    plt.ylabel("Absolute SP Rank Difference")
+    plt.title(f"Binned Semantic Distance vs SP Rank Difference ({project_key})")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f"./output/{project_key}_binned_distance_vs_spdiff.png")
+    plt.close()
+
+
+def calculate_semantic_sp_correlation(
+    collection: Collection, project_key: str, return_samples=False
+):
+    print(f"Calculating semantic SP correlation for {project_key}")
+    vectors = []
+    story_points = []
+    collection = collection.with_tenant(project_key)
+
+    for item in collection.iterator(
+        include_vector=True, return_properties=["storypoint"]
+    ):
+        sp = item.properties.get("storypoint")
+        vector = item.vector["miniLM_vector"]
+
+        if sp is not None and vector is not None and isinstance(sp, (int, float, str)):
+            vectors.append(vector)
+            story_points.append(float(sp))
+
+    print(f"vector count: {len(vectors)}")
+
+    vectors = np.array(vectors)
+    story_points = np.array(story_points)
+    n = len(vectors)
+
+    if n < 2:
+        if return_samples:
+            return 0.0, 1.0, None, None
+        return 0.0, 1.0
+
+    # 1. Normalize vectors for cosine similarity
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    vectors_norm = vectors / norms
+
+    # 2. Sampling logic
+    num_samples = min(500000, n * (n - 1) // 2)
+    idx1 = np.random.randint(0, n, num_samples)
+    idx2 = np.random.randint(0, n, num_samples)
+
+    # Filter out self-comparisons
+    mask = idx1 != idx2
+    idx1, idx2 = idx1[mask], idx2[mask]
+
+    # 3. Calculate Semantic Distance (1 - Cosine Similarity)
+    dot_products = np.sum(vectors_norm[idx1] * vectors_norm[idx2], axis=1)
+    # Clip to avoid float precision errors outside [-1, 1]
+    dot_products = np.clip(dot_products, -1.0, 1.0)
+    semantic_distances = 1.0 - dot_products
+
+    # 4. Calculate RAW Story Point Differences
+    sp_differences = np.abs(story_points[idx1] - story_points[idx2])
+    # 5. Calculate Spearman Correlation
+    # A positive correlation here means:
+    # as semantic distance increases, the difference in SP also increases.
+    correlation, p_value = spearmanr(semantic_distances, sp_differences)
+
+    if return_samples:
+        return correlation, p_value, semantic_distances, sp_differences
+
+    return correlation, p_value
 
 
 def save_as_latex(data, output_path):
